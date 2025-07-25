@@ -1,0 +1,12 @@
+# MITIE-specific dependencies
+# Install with: pip install -r requirements-mitie.txt
+
+# Include base requirements
+-r requirements.txt
+
+# MITIE - MIT Information Extraction
+git+https://github.com/mit-nlp/MITIE.git
+
+# Additional dependencies for MITIE (if needed)
+# numpy is already included in spacy dependencies
+# dlib may be required for some MITIE features but is included in MITIE installation

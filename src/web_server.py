@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 import logging
-from .ner_core import extract_entities
+from .ner_core import extract_entities, get_backend_info, get_supported_backends
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,31 +28,6 @@ class EntityResponse(BaseModel):
     score: str = Field(..., description="Model confidence score")
     label: str = Field(..., description="Name of the found entity")
 
-class NERResponse(BaseModel):
-    entities: List[EntityResponse] = Field(..., description="List of found entities")
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "entities": [
-                    {
-                        "tag": "PERSON",
-                        "score": "0.9998",
-                        "label": "Juan"
-                    },
-                    {
-                        "tag": "LOCATION", 
-                        "score": "0.9995",
-                        "label": "Madrid"
-                    },
-                    {
-                        "tag": "ORGANIZATION",
-                        "score": "0.9987", 
-                        "label": "Google Spain"
-                    }
-                ]
-            }
-        }
 
 @app.get("/", tags=["General"])
 async def root():
@@ -62,8 +37,9 @@ async def root():
         "version": "1.0.0",
         "description": "API for Named Entity Recognition in Spanish",
         "endpoints": {
-            "ner": "/ner - POST - Named entity analysis",
-            "health": "/health - GET - API status",
+            "ner": "/ner - POST - Named entity analysis (returns array directly)",
+            "health": "/health - GET - API status with backend info",
+            "backends": "/backends - GET - Available backends info",
             "docs": "/docs - Interactive documentation"
         }
     }
@@ -72,13 +48,13 @@ async def root():
 async def health_check():
     """Endpoint to check API status"""
     try:
-        # Verify that the model is loaded
-        from .ner_core import get_ner_instance
-        ner = get_ner_instance()
+        # Get backend information
+        backend_info = get_backend_info()
         
         return {
             "status": "healthy",
-            "model": ner.model_name,
+            "backend": backend_info,
+            "supported_backends": get_supported_backends(),
             "message": "API working correctly"
         }
     except Exception as e:
@@ -88,21 +64,25 @@ async def health_check():
             detail={
                 "status": "unhealthy",
                 "error": str(e),
-                "message": "Error loading NER model"
+                "message": "Error with NER backend",
+                "supported_backends": get_supported_backends()
             }
         )
 
-@app.post("/ner", response_model=NERResponse, tags=["NER"])
+@app.post("/ner", response_model=List[EntityResponse], tags=["NER"])
 async def analyze_text(request: NERRequest):
     """
     Analyze text and extract named entities
     
     - **text**: Spanish text to analyze
     
-    Returns a list of entities with:
+    Returns an array of unique entities with:
     - **tag**: Entity type (PERSON, LOCATION, ORGANIZATION, MISC, PLACE)
-    - **score**: Model confidence score
+    - **score**: Model confidence score (real scores for MITIE, 0.95 for spaCy)
     - **label**: Name of the found entity
+    
+    Note: Duplicate entities with the same label and tag are automatically filtered out.
+    Only entities with score >= 0.5 are returned when using MITIE backend.
     """
     try:
         if not request.text or not request.text.strip():
@@ -135,7 +115,7 @@ async def analyze_text(request: NERRequest):
         
         logger.info(f"Found {len(entity_responses)} entities")
         
-        return NERResponse(entities=entity_responses)
+        return entity_responses
         
     except HTTPException:
         raise
@@ -144,6 +124,43 @@ async def analyze_text(request: NERRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
+        )
+
+@app.get("/backends", tags=["General"])
+async def get_backends():
+    """
+    Get information about all available NER backends
+    
+    Returns detailed information about each available backend including
+    their status, performance characteristics, and configuration.
+    """
+    try:
+        backends_info = {}
+        supported = get_supported_backends()
+        
+        for backend_name in supported:
+            try:
+                backend_info = get_backend_info(backend=backend_name)
+                backends_info[backend_name] = backend_info
+            except Exception as e:
+                backends_info[backend_name] = {
+                    "backend": backend_name,
+                    "is_loaded": False,
+                    "error": str(e),
+                    "status": "unavailable"
+                }
+        
+        return {
+            "supported_backends": supported,
+            "backends": backends_info,
+            "default_backend": get_backend_info()["backend"]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting backends info: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving backends information: {str(e)}"
         )
 
 if __name__ == "__main__":

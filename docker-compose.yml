@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  spanish-ner:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - NER_BACKEND=mitie  # Change to 'spacy' if needed
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - LOG_LEVEL=INFO
+    volumes:
+      # Optional: Mount local models directory to avoid re-downloading
+      # - ./MITIE-models:/app/MITIE-models:ro
+      pass
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Alternative configuration for spaCy backend
+  spanish-ner-spacy:
+    build: .
+    ports:
+      - "8001:8000"
+    environment:
+      - NER_BACKEND=spacy
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    profiles:
+      - spacy-only
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

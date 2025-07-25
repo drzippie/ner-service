@@ -2,7 +2,7 @@ import click
 import json
 import sys
 from typing import Optional
-from .ner_core import extract_entities
+from .ner_core import extract_entities, get_backend_info, get_supported_backends, set_backend
 
 @click.command()
 @click.argument('text', required=False)
@@ -13,8 +13,9 @@ from .ner_core import extract_entities
               default='json',
               help='Output format (json, table, simple)')
 @click.option('--quiet', '-q', is_flag=True, help='Suppress informational messages')
+@click.option('--backend', '-b', type=click.Choice(['spacy', 'mitie']), help='NER backend to use (spacy or mitie)')
 @click.version_option(version='1.0.0', prog_name='Spanish NER CLI')
-def main(text: Optional[str], file, output, output_format: str, quiet: bool):
+def main(text: Optional[str], file, output, output_format: str, quiet: bool, backend: Optional[str]):
     """
     Spanish NER CLI - Named Entity Recognition for Spanish
     
@@ -55,9 +56,17 @@ def main(text: Optional[str], file, output, output_format: str, quiet: bool):
         if not quiet:
             click.echo("Analyzing text...", err=True)
         
-        entities = extract_entities(text.strip())
+        # Set backend if specified
+        if backend:
+            if not quiet:
+                click.echo(f"Using {backend} backend", err=True)
+        
+        entities = extract_entities(text.strip(), backend=backend)
         
         if not quiet:
+            # Show backend info
+            backend_info = get_backend_info(backend=backend)
+            click.echo(f"Backend: {backend_info['backend']} ({backend_info.get('model_name', backend_info.get('model_path', 'unknown'))})", err=True)
             click.echo(f"Found {len(entities)} entities", err=True)
         
         # Format output
@@ -138,13 +147,19 @@ def format_output(entities, format_type: str) -> str:
 @click.option('--host', default='0.0.0.0', help='Server host')
 @click.option('--port', default=8000, help='Server port')
 @click.option('--reload', is_flag=True, help='Auto-reload in development')
-def server(host: str, port: int, reload: bool):
+@click.option('--backend', '-b', type=click.Choice(['spacy', 'mitie']), help='NER backend to use (spacy or mitie)')
+def server(host: str, port: int, reload: bool, backend: Optional[str]):
     """
     Start the FastAPI web server
     """
     try:
         import uvicorn
         from .web_server import app
+        
+        # Set backend if specified
+        if backend:
+            set_backend(backend)
+            click.echo(f"Using {backend} backend")
         
         click.echo(f"Starting server at http://{host}:{port}")
         click.echo("Documentation available at http://localhost:8000/docs")
@@ -158,6 +173,26 @@ def server(host: str, port: int, reload: bool):
         click.echo(f"Error starting server: {e}", err=True)
         sys.exit(1)
 
+@click.command()
+def info():
+    """Show information about available backends"""
+    click.echo("Spanish NER - Available Backends:\n")
+    
+    supported = get_supported_backends()
+    for backend_name in supported:
+        try:
+            backend_info = get_backend_info(backend=backend_name)
+            click.echo(f"• {backend_name.upper()}:")
+            click.echo(f"  Description: {backend_info['description']}")
+            click.echo(f"  Status: {'✓ Available' if backend_info['is_loaded'] else '✗ Not loaded'}")
+            if 'performance' in backend_info:
+                click.echo(f"  Performance: {backend_info['performance']}")
+            if 'model_size' in backend_info:
+                click.echo(f"  Model size: {backend_info['model_size']}")
+            click.echo()
+        except Exception as e:
+            click.echo(f"• {backend_name.upper()}: ✗ Not available ({str(e)})\n")
+
 @click.group()
 def cli():
     """Spanish NER - Named Entity Recognition for Spanish"""
@@ -165,6 +200,7 @@ def cli():
 
 cli.add_command(main, name='analyze')
 cli.add_command(server, name='server')
+cli.add_command(info, name='info')
 
 if __name__ == '__main__':
     main()
