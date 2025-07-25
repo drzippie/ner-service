@@ -102,11 +102,22 @@ print_success "Download completed successfully (size: $FILE_SIZE bytes)"
 # Extract models
 print_status "Extracting MITIE models..."
 
-# Create directory if it doesn't exist
-mkdir -p "$MITIE_DIR"
+# Extract the zip file to temporary directory first
+TEMP_DIR="temp_mitie_extract"
+mkdir -p "$TEMP_DIR"
+unzip -q "$MITIE_ZIP" -d "$TEMP_DIR"
 
-# Extract the zip file
-unzip -q "$MITIE_ZIP" -d "$MITIE_DIR"
+# Move the extracted content to the correct location
+# The ZIP contains MITIE-models/spanish/, so we need to move it up one level
+if [ -d "$TEMP_DIR/MITIE-models" ]; then
+    mv "$TEMP_DIR/MITIE-models" "$MITIE_DIR"
+else
+    # Fallback: move whatever was extracted
+    mv "$TEMP_DIR"/* "$MITIE_DIR/"
+fi
+
+# Clean up temporary directory
+rm -rf "$TEMP_DIR"
 
 # Check extraction success
 if [ ! -f "$MITIE_DIR/spanish/ner_model.dat" ]; then

@@ -16,7 +16,7 @@ WORKDIR /models
 COPY download_mitie_models.sh .
 RUN chmod +x download_mitie_models.sh
 
-# Download MITIE models
+# Download MITIE models (script already handles correct extraction)
 RUN ./download_mitie_models.sh
 
 # Main application stage
