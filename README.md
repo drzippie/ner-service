@@ -112,12 +112,12 @@ venv\Scripts\activate.bat  # Windows
 
 Analyze text directly:
 ```bash
-# Using default backend (spaCy)
-python -m src.cli "Juan lives in Madrid and works at Google Spain."
+# Using default backend (MITIE)
+python -m src.cli "Juan vive en Madrid y trabaja en Google España."
 
 # Using specific backend
-python -m src.cli --backend spacy "Juan lives in Madrid and works at Google Spain."
-python -m src.cli --backend mitie "Juan lives in Madrid and works at Google Spain."
+python -m src.cli --backend mitie "Juan vive en Madrid y trabaja en Google España."
+python -m src.cli --backend spacy "Juan vive en Madrid y trabaja en Google España."
 ```
 
 Analyze text from file:
@@ -127,7 +127,7 @@ python -m src.cli --file input.txt --format table
 
 Save results to file:
 ```bash
-python -m src.cli "María studied in Barcelona" --output results.json
+python -m src.cli "María estudió en Barcelona" --output results.json
 ```
 
 #### CLI Options
@@ -175,55 +175,55 @@ The API will be available at `http://localhost:8000`
 ```bash
 curl -X POST "http://localhost:8000/ner" \
      -H "Content-Type: application/json" \
-     -d '{"text": "Juan lives in Madrid and works at Google Spain."}'
+     -d '{"text": "Juan vive en Madrid y trabaja en Google España."}'
 ```
 
-Response:
+Response (array returned directly):
 ```json
-{
-  "entities": [
-    {
-      "tag": "PERSON",
-      "score": "0.9998",
-      "label": "Juan"
-    },
-    {
-      "tag": "LOCATION",
-      "score": "0.9995",
-      "label": "Madrid"
-    },
-    {
-      "tag": "ORGANIZATION",
-      "score": "0.9987",
-      "label": "Google Spain"
-    }
-  ]
-}
+[
+  {
+    "tag": "PERSON",
+    "score": "0.7588",
+    "label": "Juan"
+  },
+  {
+    "tag": "LOCATION", 
+    "score": "1.2897",
+    "label": "Madrid"
+  },
+  {
+    "tag": "LOCATION",
+    "score": "0.7335",
+    "label": "Google Spain"
+  }
+]
 ```
 
 ## Backend Options
 
-### spaCy Backend (Default)
+### MITIE Backend (Default)
+
+- **Model**: Spanish NER model using Structural Support Vector Machines
+- **Size**: 451MB
+- **Performance**: High accuracy with distributional word embeddings and real confidence scores
+- **Technology**: Built on dlib, state-of-the-art techniques
+- **Score Filtering**: Only entities with confidence >= 0.5 are returned
+- **Installation**: Use `./download_mitie_models.sh` or manual download from [MITIE releases](https://github.com/mit-nlp/MITIE/releases/download/v0.4/MITIE-models-v0.2-Spanish.zip)
+
+### spaCy Backend
 
 - **Primary**: `es_core_news_md` - Spanish CNN model trained on UD Spanish AnCora and WikiNER (89.01% F-score)
 - **Fallback**: `es_core_news_sm` - Smaller Spanish model for basic NER tasks
 - **Size**: 93MB (md) or 12MB (sm)
 - **Performance**: Fast processing, optimized for CPU
+- **Score**: Fixed confidence score of 0.95 for all entities
 - **Installation**: `python -m spacy download es_core_news_md`
-
-### MITIE Backend
-
-- **Model**: Spanish NER model using Structural Support Vector Machines
-- **Size**: 451MB
-- **Performance**: High accuracy with distributional word embeddings
-- **Technology**: Built on dlib, state-of-the-art techniques
-- **Installation**: Download from [MITIE releases](https://github.com/mit-nlp/MITIE/releases/download/v0.4/MITIE-models-v0.2-Spanish.zip)
 
 ### Backend Selection
 
-- **Environment Variable**: Set `NER_BACKEND=spacy` or `NER_BACKEND=mitie`
-- **CLI Flag**: Use `--backend spacy` or `--backend mitie`
-- **Default**: spaCy (if not specified)
+- **Environment Variable**: Set `NER_BACKEND=mitie` or `NER_BACKEND=spacy`
+- **CLI Flag**: Use `--backend mitie` or `--backend spacy`
+- **Default**: MITIE (if not specified)
 
 ## Entity Types
 
@@ -242,16 +242,19 @@ All entities are returned with the following structure:
 ```json
 {
   "tag": "ENTITY_TYPE",
-  "score": "0.95",
+  "score": "0.7588",
   "label": "Entity Name"
 }
 ```
 
-- `tag`: The entity type (PERSON, LOCATION, etc.)
-- `score`: Confidence score (fixed at 0.95 for spaCy's reliable rule-based NER)
+- `tag`: The entity type (PERSON, LOCATION, ORGANIZATION, MISC, PLACE)
+- `score`: Confidence score (real scores from MITIE backend, fixed 0.95 for spaCy backend)
 - `label`: The actual text of the identified entity
 
-**Important**: All entities are unique - duplicate entities with the same label and tag are automatically filtered out.
+**Important**: 
+- All entities are unique - duplicate entities with the same label and tag are automatically filtered out
+- **MITIE backend**: Only entities with score >= 0.5 are returned (score filtering)
+- **spaCy backend**: All detected entities are returned with fixed score of 0.95
 
 ## Virtual Environment Management
 
@@ -373,31 +376,61 @@ docker-compose --profile spacy-only up spanish-ner-spacy
 
 ### Downloading MITIE Models
 
-If you prefer to download MITIE models separately:
+#### Option 1: Automated Download (Recommended)
+
+Use the provided script to automatically download and extract MITIE models:
 
 ```bash
-# Download models locally
+# Download Spanish MITIE models (~451MB)
 ./download_mitie_models.sh
+```
 
-# Then mount in Docker
+The script will:
+- Download the Spanish model ZIP file from GitHub releases
+- Extract to the correct directory structure (`MITIE-models/spanish/`)
+- Verify the download integrity
+- Provide usage instructions
+
+#### Option 2: Manual Download
+
+If you prefer to download MITIE models manually:
+
+```bash
+# Download manually
+curl -L -o MITIE-models-Spanish.zip \
+  https://github.com/mit-nlp/MITIE/releases/download/v0.4/MITIE-models-v0.2-Spanish.zip
+
+# Extract to correct location
+mkdir -p temp_extract
+unzip MITIE-models-Spanish.zip -d temp_extract
+mv temp_extract/MITIE-models ./MITIE-models
+rm -rf temp_extract MITIE-models-Spanish.zip
+```
+
+#### Docker Usage with Local Models
+
+```bash
+# After downloading models locally, mount in Docker
 docker run -p 8000:8000 -v ./MITIE-models:/app/MITIE-models:ro spanish-ner:latest
 ```
 
 ## Performance Comparison
 
+### MITIE Backend (Default)
+- **Speed**: Moderate processing speed
+- **Memory**: Higher usage (~451MB model)
+- **Accuracy**: State-of-the-art precision with SVM and real confidence scores
+- **Startup**: Slower model loading (~5-10 seconds)
+- **Score Filtering**: Only high-confidence entities (>= 0.5) returned
+- **Best for**: Applications requiring maximum accuracy and reliable confidence scores
+
 ### spaCy Backend
 - **Speed**: Very fast processing
 - **Memory**: Low usage (~93MB model)
 - **Accuracy**: 89.01% F-score for Spanish NER
-- **Startup**: Quick model loading
+- **Startup**: Quick model loading (~1-2 seconds)
+- **Score**: Fixed confidence score of 0.95 for all entities
 - **Best for**: High-throughput applications, resource-constrained environments
-
-### MITIE Backend
-- **Speed**: Slower than spaCy but still reasonable
-- **Memory**: Higher usage (~451MB model)
-- **Accuracy**: State-of-the-art precision with SVM
-- **Startup**: Slower model loading
-- **Best for**: Applications requiring maximum accuracy
 
 ### Common Features
 - **Unique entities**: Automatic deduplication ensures no duplicate entities
